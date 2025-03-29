@@ -1,0 +1,83 @@
+{
+  "name": "QuickFundHub",
+  "short_name": "QuickFundHub",
+  "description": "Plataforma de geração de lucros automatizada",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#3182CE",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "pwa-maskable-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "screenshot-1.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "platform": "wide",
+      "label": "Dashboard do QuickFundHub"
+    },
+    {
+      "src": "screenshot-2.png",
+      "sizes": "750x1334",
+      "type": "image/png",
+      "platform": "narrow",
+      "label": "Dashboard móvel do QuickFundHub"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "description": "Acesse seu dashboard",
+      "url": "/",
+      "icons": [{ "src": "shortcut-dashboard.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "QuickAI",
+      "short_name": "QuickAI",
+      "description": "Acesse o sistema QuickAI",
+      "url": "/quick-ai",
+      "icons": [{ "src": "shortcut-quickai.png", "sizes": "96x96" }]
+    }
+  ],
+  "related_applications": [
+    {
+      "platform": "play",
+      "url": "https://play.google.com/store/apps/details?id=com.quickfundhub.app",
+      "id": "com.quickfundhub.app"
+    },
+    {
+      "platform": "itunes",
+      "url": "https://apps.apple.com/app/quickfundhub/id123456789"
+    }
+  ],
+  "prefer_related_applications": false,
+  "categories": ["finance", "business", "productivity"],
+  "lang": "pt-BR",
+  "dir": "ltr"
+}

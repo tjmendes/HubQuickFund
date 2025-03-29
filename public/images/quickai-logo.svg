@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500">
+  <circle cx="250" cy="200" r="150" fill="#e74c3c" opacity="0.8"/>
+  <path d="M100,350 L400,350 C400,350 350,200 250,200 C150,200 100,350 100,350 Z" fill="#2c3e50"/>
+  <path d="M100,200 L400,200 C400,200 350,350 250,350 C150,350 100,200 100,200 Z" fill="#2c3e50" opacity="0.6"/>
+  <path d="M100,100 L400,400" stroke="#2c3e50" stroke-width="20" stroke-linecap="round"/>
+  <circle cx="180" cy="150" r="25" fill="#fff"/>
+  <circle cx="320" cy="150" r="25" fill="#fff"/>
+  <circle cx="250" cy="250" r="30" fill="#fff"/>
+  <circle cx="180" cy="350" r="25" fill="#fff"/>
+  <circle cx="320" cy="350" r="25" fill="#fff"/>
+  <text x="100" y="450" font-family="Arial" font-weight="bold" font-size="60" fill="#2c3e50">QUICK</text>
+  <text x="280" y="450" font-family="Arial" font-size="60" fill="#7f8c8d">AI</text>
+</svg>

@@ -1,0 +1,347 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Infraestrutura AWS para QuickFundHub com notificações em tempo real e banco de dados Aurora'
+
+Parameters:
+  Environment:
+    Description: Ambiente de implantação
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    
+Resources:
+  # DynamoDB Tables
+  ProfitsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub quickfund-profits-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: N
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      Tags:
+        - Key: Project
+          Value: QuickFundHub
+
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub quickfund-users-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      Tags:
+        - Key: Project
+          Value: QuickFundHub
+
+  # SNS Topic para notificações de lucros
+  ProfitsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub quickfund-profits-${Environment}
+      Tags:
+        - Key: Project
+          Value: QuickFundHub
+
+  # SQS Queue para processamento de lucros
+  ProfitsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub quickfund-profits-${Environment}
+      VisibilityTimeout: 300
+      Tags:
+        - Key: Project
+          Value: QuickFundHub
+
+  # Subscription do SNS para o SQS
+  ProfitsTopicSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref ProfitsTopic
+      Protocol: sqs
+      Endpoint: !GetAtt ProfitsQueue.Arn
+
+  # Política para permitir que o SNS envie mensagens para o SQS
+  ProfitsQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref ProfitsQueue
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: 'sqs:SendMessage'
+            Resource: !GetAtt ProfitsQueue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !Ref ProfitsTopic
+
+  # S3 Bucket para relatórios
+  ReportsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub quickfund-reports-${Environment}-${AWS::AccountId}
+      AccessControl: Private
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldReports
+            Status: Enabled
+            ExpirationInDays: 365
+      Tags:
+        - Key: Project
+          Value: QuickFundHub
+          
+  # Aurora Database Cluster para armazenamento de dados
+  AuroraDBCluster:
+    Type: AWS::RDS::DBCluster
+    Properties:
+      Engine: aurora-mysql
+      EngineVersion: 8.0.mysql_aurora.3.02.0
+      DatabaseName: quickfundhub
+      MasterUsername: !Sub '{{resolve:ssm:/quickfundhub/db/username:1}}'
+      MasterUserPassword: !Sub '{{resolve:ssm:/quickfundhub/db/password:1}}'
+      BackupRetentionPeriod: 7
+      PreferredBackupWindow: 02:00-03:00
+      PreferredMaintenanceWindow: sun:03:00-sun:04:00
+      DBSubnetGroupName: !Ref AuroraDBSubnetGroup
+      VpcSecurityGroupIds:
+        - !Ref AuroraSecurityGroup
+      StorageEncrypted: true
+      EnableHttpEndpoint: true
+      Tags:
+        - Key: Project
+          Value: QuickFundHub
+          
+  # Aurora DB Instances
+  AuroraPrimaryInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBClusterIdentifier: !Ref AuroraDBCluster
+      DBInstanceClass: db.r6g.large
+      Engine: aurora-mysql
+      PubliclyAccessible: false
+      Tags:
+        - Key: Project
+          Value: QuickFundHub
+          
+  AuroraReplicaInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBClusterIdentifier: !Ref AuroraDBCluster
+      DBInstanceClass: db.r6g.large
+      Engine: aurora-mysql
+      PubliclyAccessible: false
+      Tags:
+        - Key: Project
+          Value: QuickFundHub
+          
+  # Aurora DB Subnet Group
+  AuroraDBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for Aurora DB
+      SubnetIds: !Split [',', !ImportValue 'DatabaseSubnets']
+      Tags:
+        - Key: Project
+          Value: QuickFundHub
+          
+  # Security Group para Aurora
+  AuroraSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Aurora DB access
+      VpcId: !ImportValue 'VpcId'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !ImportValue 'AppSecurityGroupId'
+      Tags:
+        - Key: Project
+          Value: QuickFundHub
+
+  # IAM Role para a função Lambda
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: QuickFundHubLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'dynamodb:GetItem'
+                  - 'dynamodb:PutItem'
+                  - 'dynamodb:Query'
+                  - 'dynamodb:Scan'
+                  - 'dynamodb:UpdateItem'
+                Resource:
+                  - !GetAtt ProfitsTable.Arn
+                  - !GetAtt UsersTable.Arn
+              - Effect: Allow
+                Action:
+                  - 'sns:Publish'
+                Resource: !Ref ProfitsTopic
+              - Effect: Allow
+                Action:
+                  - 'sqs:ReceiveMessage'
+                  - 'sqs:DeleteMessage'
+                  - 'sqs:GetQueueAttributes'
+                Resource: !GetAtt ProfitsQueue.Arn
+              - Effect: Allow
+                Action:
+                  - 's3:PutObject'
+                  - 's3:GetObject'
+                Resource: !Sub '${ReportsBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - 'ses:SendEmail'
+                  - 'ses:SendRawEmail'
+                Resource: '*'
+
+  # Lambda Function para processamento de lucros
+  ProfitsProcessorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub quickfund-profits-processor-${Environment}
+      Runtime: nodejs18.x
+      Handler: lambda-function.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 60
+      MemorySize: 256
+      Environment:
+        Variables:
+          DYNAMODB_TABLE_PROFITS: !Ref ProfitsTable
+          DYNAMODB_TABLE_USERS: !Ref UsersTable
+          SNS_TOPIC_PROFITS: !Ref ProfitsTopic
+          S3_BUCKET_REPORTS: !Ref ReportsBucket
+          TWILIO_ACCOUNT_SID: '{{resolve:ssm:/quickfundhub/twilio/account_sid:1}}'
+          TWILIO_AUTH_TOKEN: '{{resolve:ssm:/quickfundhub/twilio/auth_token:1}}'
+          TWILIO_PHONE_NUMBER: '{{resolve:ssm:/quickfundhub/twilio/phone_number:1}}'
+          USER_WHATSAPP_NUMBER: '+5531975196208'
+          REPORT_EMAIL_1: 'tiagojosemendes841@gmail.com'
+          REPORT_EMAIL_2: 'quicktrust43@gmail.com'
+          PROFIT_NOTIFICATION_THRESHOLD: '10'
+          DAILY_REPORT_TIME: '18:00'
+          WEEKLY_REPORT_DAY: '1'
+          SES_DOMAIN: 'quickfundhub.com'
+      Tags:
+        - Key: Project
+          Value: QuickFundHub
+
+  # Trigger do DynamoDB para a função Lambda
+  DynamoDBTrigger:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 10
+      Enabled: true
+      EventSourceArn: !GetAtt ProfitsTable.StreamArn
+      FunctionName: !GetAtt ProfitsProcessorFunction.Arn
+      StartingPosition: LATEST
+
+  # API Gateway para acesso à função Lambda
+  ApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub quickfund-api-${Environment}
+      Description: API para o QuickFundHub
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Tags:
+        - Key: Project
+          Value: QuickFundHub
+
+  # Recurso da API Gateway para lucros
+  ProfitsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: 'profits'
+
+  # Método POST para o recurso de lucros
+  ProfitsPostMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ProfitsResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProfitsProcessorFunction.Arn}/invocations'
+
+  # Permissão para a API Gateway invocar a função Lambda
+  ApiGatewayPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !Ref ProfitsProcessorFunction
+      Principal: 'apigateway.amazonaws.com'
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/POST/profits'
+
+  # Implantação da API Gateway
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - ProfitsPostMethod
+    Properties:
+      RestApiId: !Ref ApiGateway
+      StageName: !Ref Environment
+
+Outputs:
+  ProfitsTableName:
+    Description: Nome da tabela de lucros no DynamoDB
+    Value: !Ref ProfitsTable
+
+  UsersTableName:
+    Description: Nome da tabela de usuários no DynamoDB
+    Value: !Ref UsersTable
+
+  ProfitsTopicArn:
+    Description: ARN do tópico SNS para notificações de lucros
+    Value: !Ref ProfitsTopic
+
+  ProfitsQueueUrl:
+    Description: URL da fila SQS para processamento de lucros
+    Value: !Ref ProfitsQueue
+
+  ReportsBucketName:
+    Description: Nome do bucket S3 para relatórios
+    Value: !Ref ReportsBucket
+
+  LambdaFunctionName:
+    Description: Nome da função Lambda para processamento de lucros
+    Value: !Ref ProfitsProcessorFunction
+
+  ApiEndpoint:
+    Description: Endpoint da API Gateway
+    Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/profits'
